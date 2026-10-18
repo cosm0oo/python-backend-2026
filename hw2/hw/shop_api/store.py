@@ -1,57 +1,74 @@
-from itertools import count
 from math import fsum, isfinite
 
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
+
+from .db_models import CartLineRecord, CartRecord, ItemRecord
 from .models import Cart, CartItem, Item
 
 
 class Store:
-    def __init__(self):
-        self.items: dict[int, Item] = {}
-        self.carts: dict[int, dict[int, int]] = {}
-        self.item_ids = count(1)
-        self.cart_ids = count(1)
-
-    def cart_price(
-        self, quantities: dict[int, int], replacement: Item | None = None
-    ) -> float:
+    @staticmethod
+    def cart_price(cart: CartRecord, replacement: Item | None = None) -> float:
         prices = []
-        for item_id, quantity in quantities.items():
+        for line in cart.lines:
             item = (
                 replacement
-                if replacement is not None and replacement.id == item_id
-                else self.items[item_id]
+                if replacement is not None and replacement.id == line.item_id
+                else line.item
             )
             if not item.deleted:
-                prices.append(item.price * quantity)
+                prices.append(item.price * line.quantity)
         price = fsum(prices)
         if not isfinite(price):
             raise OverflowError("Cart price is too large")
         return price
 
-    def add_to_cart(self, cart_id: int, item_id: int) -> None:
-        quantities = self.carts[cart_id].copy()
-        quantities[item_id] = quantities.get(item_id, 0) + 1
-        self.cart_price(quantities)
-        self.carts[cart_id] = quantities
+    @staticmethod
+    def get_cart(session: Session, cart_id: int) -> CartRecord | None:
+        return session.scalar(
+            select(CartRecord)
+            .where(CartRecord.id == cart_id)
+            .options(selectinload(CartRecord.lines).selectinload(CartLineRecord.item))
+        )
 
-    def update_item(self, item: Item) -> None:
-        for quantities in self.carts.values():
-            if item.id in quantities:
-                self.cart_price(quantities, replacement=item)
-        self.items[item.id] = item
-
-    def get_cart(self, cart_id: int) -> Cart:
-        quantities = self.carts[cart_id]
+    @staticmethod
+    def to_cart(cart: CartRecord) -> Cart:
         return Cart(
-            id=cart_id,
+            id=cart.id,
             items=[
                 CartItem(
-                    id=item_id,
-                    name=self.items[item_id].name,
-                    quantity=quantity,
-                    available=not self.items[item_id].deleted,
+                    id=line.item.id,
+                    name=line.item.name,
+                    quantity=line.quantity,
+                    available=not line.item.deleted,
                 )
-                for item_id, quantity in quantities.items()
+                for line in cart.lines
             ],
-            price=self.cart_price(quantities),
+            price=Store.cart_price(cart),
         )
+
+    @staticmethod
+    def add_to_cart(session: Session, cart: CartRecord, item: ItemRecord) -> None:
+        line = next((line for line in cart.lines if line.item_id == item.id), None)
+        if line is None:
+            cart.lines.append(CartLineRecord(item=item, quantity=1))
+        else:
+            line.quantity += 1
+        Store.cart_price(cart)
+        session.commit()
+
+    @staticmethod
+    def update_item(session: Session, item: ItemRecord, data: Item) -> None:
+        carts = session.scalars(
+            select(CartRecord)
+            .join(CartLineRecord)
+            .where(CartLineRecord.item_id == item.id)
+            .options(selectinload(CartRecord.lines).selectinload(CartLineRecord.item))
+        ).unique()
+        for cart in carts:
+            Store.cart_price(cart, data)
+        item.name = data.name
+        item.price = data.price
+        item.deleted = data.deleted
+        session.commit()

@@ -5,6 +5,11 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    environment:
+      DATABASE_URL: mssql+pymssql://sa:ShopApi2026@database:1433/master
+    depends_on:
+      database:
+        condition: service_healthy
     restart: unless-stopped
 
   prometheus:
@@ -19,6 +24,24 @@ services:
       - prometheus-data:/prometheus
     depends_on:
       - shop-api
+    restart: unless-stopped
+
+  database:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: Y
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ShopApi2026
+    ports:
+      - "1433:1433"
+    volumes:
+      - database-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P $$MSSQL_SA_PASSWORD -Q 'SELECT 1' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
     restart: unless-stopped
 
   grafana:
@@ -38,5 +61,6 @@ services:
     restart: unless-stopped
 
 volumes:
+  database-data:
   grafana-data:
   prometheus-data:
