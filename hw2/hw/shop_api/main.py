@@ -88,9 +88,9 @@ async def list_carts(
     max_quantity: QuantityFilter = None,
 ) -> list[Cart]:
     records = session.scalars(
-        select(CartRecord).options(
-            selectinload(CartRecord.lines).selectinload(CartLineRecord.item)
-        )
+        select(CartRecord)
+        .order_by(CartRecord.id)
+        .options(selectinload(CartRecord.lines).selectinload(CartLineRecord.item))
     )
     carts = []
     for record in records:
@@ -147,7 +147,7 @@ async def list_items(
     max_price: PriceFilter = None,
     show_deleted: bool = False,
 ) -> list[Item]:
-    statement = select(ItemRecord)
+    statement = select(ItemRecord).order_by(ItemRecord.id)
     if not show_deleted:
         statement = statement.where(ItemRecord.deleted.is_(False))
     if min_price is not None:

@@ -114,25 +114,32 @@ python -m uvicorn shop_api.main:app --app-dir hw2/hw --reload
 Если добавление товара или изменение его цены/доступности приводит к
 переполнению стоимости корзины, операция возвращает `422` без изменения данных.
 
-Чтобы запустить тесты только для этого задания вызовите:
+Чтобы запустить исходные и дополнительные тесты с проверкой покрытия:
 
 ```sh
-python -m pytest -vv --showlocals --strict-markers ./hw2/hw/test_homework2.py
+python -m pytest -c hw2/hw/pytest.ini hw2/hw -q
 ```
 
-Если получаете ошибку на подобии `No module named 'shop_api'`
-Понадобится еще такая команда, после которой можно запускать тесты:
+Проверяются API, валидация, фильтрация и пагинация, откат ошибочных изменений,
+сохранение данных после переподключения к БД и WebSocket-чат. Покрытие строк и
+ветвлений измеряется для всего пакета `shop_api`. Если итог ниже 95%, команда
+завершается с ошибкой. XML-отчёт сохраняется в `coverage.xml` текущей папки.
 
-```sh
-export PYTHONPATH=${PWD}/hw2/hw
-```
-
-В PowerShell:
+По умолчанию тесты создают временный файл SQLite и удаляют его после запуска.
+Обычный `shop.db` не используется. Для проверки с SQL Server нужно создать
+отдельную базу `shop_test` и передать её адрес через `TEST_DATABASE_URL`.
+Таблицы этой тестовой базы очищаются между дополнительными тестами.
 
 ```powershell
-$env:PYTHONPATH = "$PWD/hw2/hw"
-python -m pytest hw2/hw/test_homework2.py -v
+$env:TEST_DATABASE_URL = "mssql+pymssql://sa:ShopApi2026@localhost:1433/shop_test"
+python -m pytest -c hw2/hw/pytest.ini hw2/hw -q
+Remove-Item Env:TEST_DATABASE_URL
 ```
+
+Workflow `.github/workflows/hw2-tests.yml` запускает те же тесты с SQL Server
+на Python 3.13 и 3.14 при push в любую ветку и PR в `main`. Изменения самого
+workflow также запускают проверку. SQL Server и тестовая база создаются
+автоматически; XML-отчёт доступен в артефактах запуска Actions.
 
 ## Доп. Задание - WebSocket (+ доп балл)
 
